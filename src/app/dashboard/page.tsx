@@ -45,13 +45,12 @@ function DashboardContent() {
   } | null>(null);
 
   useEffect(() => {
-    const storedProfileStr = sessionStorage.getItem("edupath_profile");
     let currentProfile: ResumeAnalysis | null = null;
+    const storedProfileStr = sessionStorage.getItem("edupath_profile");
 
     if (storedProfileStr) {
       try {
         currentProfile = JSON.parse(storedProfileStr);
-        setProfile(currentProfile);
       } catch (e) {
         console.error("Failed to parse profile from storage", e);
       }
@@ -62,6 +61,8 @@ function DashboardContent() {
         setIsAnalyzingGaps(false);
         return;
       }
+
+      setProfile(currentProfile);
 
       // Step 1: Analyze Gaps
       let gaps: AnalyzedSkillGap[] | null = null;

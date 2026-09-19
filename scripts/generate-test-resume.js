@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Generate a test resume PDF for the EduPath AI pipeline
 const PDFDocument = require("pdfkit");
 const fs = require("fs");

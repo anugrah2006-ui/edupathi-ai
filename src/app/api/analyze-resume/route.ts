@@ -36,7 +36,12 @@ export async function POST(req: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const { PDFParse } = (await import("pdf-parse")) as any;
+        const { PDFParse } = (await import("pdf-parse")) as unknown as {
+          PDFParse: new (options: { data: Uint8Array }) => {
+            getText: () => Promise<{ text?: string }>;
+            destroy: () => Promise<void>;
+          };
+        };
         const parser = new PDFParse({ data: new Uint8Array(buffer) });
         try {
           const result = await parser.getText();
