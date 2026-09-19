@@ -220,6 +220,7 @@ export const TodayMissionSchema = z.object({
   currentLevel: z.number().describe("Learner's current level in this skill (1-5)"),
   targetLevel: z.number().describe("Target level to attain through this mission (1-5)"),
   description: z.string().describe("Context and importance of this mission"),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional().default("intermediate").describe("Difficulty level"),
   type: z.enum(["coding", "quiz", "written", "project"]).describe("Mission format"),
   estimatedMinutes: z.number().describe("Estimated duration in minutes (e.g. 20-45 min)"),
   taskPrompt: z.string().describe("Clear, step-by-step instructions or challenge problem for the learner to solve"),
@@ -345,4 +346,150 @@ export function getRoadmapAndMissionJsonSchema() {
     required: ["roadmap", "todayMission"],
   };
 }
+
+// ─── Mission Evaluation Schema ──────────────────────────────────
+
+export const MissionEvaluationResultSchema = z.object({
+  score: z
+    .number()
+    .min(0)
+    .max(100)
+    .describe("Score from 0 to 100 based on how well the submission meets the evaluation criteria"),
+  feedback: z
+    .string()
+    .describe("Detailed, constructive feedback explaining the score and actionable suggestions"),
+  strengths: z
+    .array(z.string())
+    .describe("List of 2-4 key strengths identified in the submission"),
+  weaknesses: z
+    .array(z.string())
+    .describe("List of 1-3 specific areas for improvement or issues identified"),
+  passed: z
+    .boolean()
+    .describe("True if score is 70 or above, false otherwise"),
+});
+
+export type MissionEvaluationResult = z.infer<typeof MissionEvaluationResultSchema>;
+
+export function getMissionEvaluationJsonSchema() {
+  return {
+    type: "object" as const,
+    properties: {
+      score: {
+        type: "number" as const,
+        description: "Score from 0 to 100 based on evaluation criteria",
+      },
+      feedback: {
+        type: "string" as const,
+        description: "Detailed, constructive feedback explaining the score",
+      },
+      strengths: {
+        type: "array" as const,
+        items: { type: "string" as const },
+        description: "Key strengths identified in the submission",
+      },
+      weaknesses: {
+        type: "array" as const,
+        items: { type: "string" as const },
+        description: "Areas for improvement or mistakes found",
+      },
+      passed: {
+        type: "boolean" as const,
+        description: "True if score >= 70, false otherwise",
+      },
+    },
+    required: ["score", "feedback", "strengths", "weaknesses", "passed"],
+  };
+}
+
+// ─── Adaptive Next Mission Schema ───────────────────────────────
+
+export const AdaptiveNextMissionResponseSchema = z.object({
+  adaptationReason: z
+    .string()
+    .describe("Explanation of why this specific mission was chosen (e.g. reinforcement for weaknesses vs progression to next skill milestone)"),
+  isRemedial: z
+    .boolean()
+    .describe("True if this mission is a remedial/reinforcement mission targeting identified weaknesses, false if advancing"),
+  updatedSkillGaps: z
+    .array(AnalyzedSkillGapSchema)
+    .describe("Updated list of skill gaps reflecting learner's latest progress"),
+  nextMission: TodayMissionSchema.describe("The next adaptive mission crafted for the learner"),
+});
+
+export type AdaptiveNextMissionResponse = z.infer<typeof AdaptiveNextMissionResponseSchema>;
+
+export function getAdaptiveNextMissionJsonSchema() {
+  return {
+    type: "object" as const,
+    properties: {
+      adaptationReason: {
+        type: "string" as const,
+        description: "Clear explanation of why this mission was chosen based on the evaluation result",
+      },
+      isRemedial: {
+        type: "boolean" as const,
+        description: "True if remedial due to failure/weaknesses, false if advancing",
+      },
+      updatedSkillGaps: {
+        type: "array" as const,
+        items: {
+          type: "object" as const,
+          properties: {
+            skill: { type: "string" as const },
+            currentLevel: { type: "number" as const },
+            requiredLevel: { type: "number" as const },
+            gap: { type: "number" as const },
+            priority: {
+              type: "string" as const,
+              enum: ["low", "medium", "high"],
+            },
+            reason: { type: "string" as const },
+          },
+          required: ["skill", "currentLevel", "requiredLevel", "gap", "priority", "reason"],
+        },
+      },
+      nextMission: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string" as const },
+          targetSkill: { type: "string" as const },
+          currentLevel: { type: "number" as const },
+          targetLevel: { type: "number" as const },
+          description: { type: "string" as const },
+          difficulty: {
+            type: "string" as const,
+            enum: ["beginner", "intermediate", "advanced"],
+          },
+          type: {
+            type: "string" as const,
+            enum: ["coding", "quiz", "written", "project"],
+          },
+          estimatedMinutes: { type: "number" as const },
+          taskPrompt: { type: "string" as const },
+          expectedOutcome: { type: "string" as const },
+          evaluationCriteria: {
+            type: "array" as const,
+            items: { type: "string" as const },
+          },
+        },
+        required: [
+          "title",
+          "targetSkill",
+          "currentLevel",
+          "targetLevel",
+          "description",
+          "type",
+          "estimatedMinutes",
+          "taskPrompt",
+          "expectedOutcome",
+          "evaluationCriteria",
+        ],
+      },
+    },
+    required: ["adaptationReason", "isRemedial", "updatedSkillGaps", "nextMission"],
+  };
+}
+
+
 

@@ -103,3 +103,101 @@ export async function saveRoadmapToSupabase(params: SaveRoadmapParams): Promise<
     return { roadmapId: null, missionId: null, storedInSupabase: false };
   }
 }
+
+// ─── Save Submission & AI Evaluation ────────────────────────────
+
+export async function saveSubmissionToSupabase(params: {
+  missionId?: string | null;
+  submissionText: string;
+  evaluation: {
+    score: number;
+    feedback: string;
+    strengths: string[];
+    weaknesses: string[];
+    passed: boolean;
+  };
+}): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !params.missionId) {
+    return false;
+  }
+
+  try {
+    // 1. Insert into submissions table
+    const { error: subError } = await supabase.from("submissions").insert({
+      mission_id: params.missionId,
+      user_submission: params.submissionText,
+      score: params.evaluation.score,
+      strengths: params.evaluation.strengths,
+      weaknesses: params.evaluation.weaknesses,
+      feedback: params.evaluation.feedback,
+      next_mission_hints: params.evaluation.weaknesses,
+    });
+
+    if (subError) {
+      console.error("Error inserting submission to Supabase:", subError);
+      return false;
+    }
+
+    // 2. If passed, update mission status to 'completed'
+    if (params.evaluation.passed) {
+      const { error: updateError } = await supabase
+        .from("missions")
+        .update({ status: "completed" })
+        .eq("id", params.missionId);
+
+      if (updateError) {
+        console.error("Error updating mission status in Supabase:", updateError);
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Error saving submission to Supabase:", err);
+    return false;
+  }
+}
+
+// ─── Save Next Mission ──────────────────────────────────────────
+
+export async function saveNextMissionToSupabase(params: {
+  roadmapId?: string | null;
+  nextMission: TodayMission;
+}): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !params.roadmapId) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("missions")
+      .insert({
+        roadmap_id: params.roadmapId,
+        title: params.nextMission.title,
+        target_skill: params.nextMission.targetSkill,
+        current_level: params.nextMission.currentLevel,
+        target_level: params.nextMission.targetLevel,
+        difficulty: params.nextMission.difficulty || "intermediate",
+        mission_type: params.nextMission.type,
+        estimated_minutes: params.nextMission.estimatedMinutes,
+        task_prompt: params.nextMission.taskPrompt,
+        expected_outcome: params.nextMission.expectedOutcome,
+        evaluation_criteria: params.nextMission.evaluationCriteria,
+        status: "in_progress",
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("Error inserting next mission to Supabase:", error);
+      return null;
+    }
+
+    return data?.id || null;
+  } catch (err) {
+    console.error("Error saving next mission to Supabase:", err);
+    return null;
+  }
+}
+

@@ -7,13 +7,17 @@ import { Navbar } from "@/components/navbar";
 import { SkillGapChart } from "@/components/skill-gap-chart";
 import { RoadmapTimeline } from "@/components/roadmap-timeline";
 import { MissionCard } from "@/components/mission-card";
-import type { AnalyzedSkillGap, ResumeAnalysis, RoadmapPlan, TodayMission } from "@/lib/schemas";
+import type {
+  AnalyzedSkillGap,
+  ResumeAnalysis,
+  RoadmapPlan,
+  TodayMission,
+  MissionEvaluationResult,
+} from "@/lib/schemas";
 import {
   TARGET_ROLES,
   MOCK_LEARNER_PROFILE,
-  MOCK_ROADMAP,
   MOCK_CURRENT_MISSION,
-  MOCK_LAST_EVALUATION,
 } from "@/lib/mock-data";
 
 function DashboardContent() {
@@ -32,17 +36,21 @@ function DashboardContent() {
   const [isGeneratingRoadmap, setIsGeneratingRoadmap] = useState(false);
   const [roadmapError, setRoadmapError] = useState<string | null>(null);
   const [isSupabaseSaved, setIsSupabaseSaved] = useState<boolean | null>(null);
+  const [roadmapId, setRoadmapId] = useState<string | null>(null);
+  const [currentMissionId, setCurrentMissionId] = useState<string | null>(null);
+
+  // Adaptive Next Mission state
+  const [adaptationReason, setAdaptationReason] = useState<string | null>(null);
+  const [isRemedial, setIsRemedial] = useState<boolean | null>(null);
+  const [completedMissionsCount, setCompletedMissionsCount] = useState<number>(0);
 
   // Active Challenge Modal State
   const [isMissionModalOpen, setIsMissionModalOpen] = useState(false);
   const [submissionText, setSubmissionText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionResult, setSubmissionResult] = useState<{
-    score: number;
-    feedback: string;
-    strengths: string[];
-    weaknesses: string[];
-  } | null>(null);
+  const [submittingStep, setSubmittingStep] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submissionResult, setSubmissionResult] = useState<MissionEvaluationResult | null>(null);
 
   useEffect(() => {
     let currentProfile: ResumeAnalysis | null = null;
@@ -97,6 +105,23 @@ function DashboardContent() {
             setRoadmap(cached.roadmap);
             setTodayMission(cached.todayMission);
             setIsSupabaseSaved(cached.supabase?.storedInSupabase ?? null);
+            setRoadmapId(cached.supabase?.roadmapId ?? null);
+            setCurrentMissionId(cached.supabase?.missionId ?? null);
+            if (cached.skillGaps) {
+              setSkillGaps(cached.skillGaps);
+            }
+            if (cached.lastEvaluation) {
+              setSubmissionResult(cached.lastEvaluation);
+            }
+            if (typeof cached.completedMissionsCount === "number") {
+              setCompletedMissionsCount(cached.completedMissionsCount);
+            }
+            if (cached.adaptationReason) {
+              setAdaptationReason(cached.adaptationReason);
+            }
+            if (typeof cached.isRemedial === "boolean") {
+              setIsRemedial(cached.isRemedial);
+            }
             return;
           } catch (e) {
             console.error("Failed to parse cached roadmap", e);
@@ -121,6 +146,8 @@ function DashboardContent() {
             setRoadmap(roadData.roadmap);
             setTodayMission(roadData.todayMission);
             setIsSupabaseSaved(roadData.supabase?.storedInSupabase ?? false);
+            setRoadmapId(roadData.supabase?.roadmapId ?? null);
+            setCurrentMissionId(roadData.supabase?.missionId ?? null);
             sessionStorage.setItem(cachedKey, JSON.stringify(roadData));
           } else {
             setRoadmapError(roadData.error || "Failed to generate personalized roadmap.");
@@ -137,14 +164,20 @@ function DashboardContent() {
     loadData();
   }, [role.id]);
 
-  const completionPct = Math.round(
-    (MOCK_ROADMAP.completedMissions / MOCK_ROADMAP.totalMissions) * 100
+  const totalMissions = 20;
+  const completionPct = Math.min(
+    100,
+    Math.round((completedMissionsCount / totalMissions) * 100)
   );
+  const currentWeekNumber = Math.min(4, Math.max(1, Math.floor(completedMissionsCount / 5) + 1));
+  const currentWeekTheme =
+    roadmap?.weeks[currentWeekNumber - 1]?.theme ||
+    (currentWeekNumber === 1 ? "Core Foundations" : `Week ${currentWeekNumber} Progression`);
 
   const displayProfile = profile || (MOCK_LEARNER_PROFILE as unknown as ResumeAnalysis);
 
   return (
-    <main className="min-h-screen pt-20 pb-16 px-6">
+    <main id="overview" className="min-h-screen pt-20 pb-16 px-6 scroll-mt-20">
       <div className="mx-auto max-w-7xl">
         {/* ──── Header ──── */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -180,14 +213,14 @@ function DashboardContent() {
           <StatCard
             label="Overall Progress"
             value={`${completionPct}%`}
-            detail={`${MOCK_ROADMAP.completedMissions}/${MOCK_ROADMAP.totalMissions} missions completed`}
+            detail={`${completedMissionsCount}/${totalMissions} missions completed`}
             icon="📈"
             accent="violet"
           />
           <StatCard
             label="Current Week"
-            value="Week 1"
-            detail={roadmap?.weeks[0]?.theme || "Core Acceleration"}
+            value={`Week ${currentWeekNumber}`}
+            detail={currentWeekTheme}
             icon="📅"
             accent="indigo"
           />
@@ -215,8 +248,33 @@ function DashboardContent() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left Column: Mission + Evaluation */}
           <div className="space-y-6 lg:col-span-2">
+            {/* Adaptive Feedback Reason Banner */}
+            {adaptationReason && (
+              <div
+                className={`rounded-2xl p-4 border transition-all animate-fade-in ${
+                  isRemedial
+                    ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">{isRemedial ? "🔄" : "🚀"}</span>
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider block mb-1">
+                      {isRemedial
+                        ? "Adaptive Reinforcement Mission"
+                        : "Skill Progress Milestone Achieved"}
+                    </span>
+                    <p className="text-xs leading-relaxed text-zinc-300">
+                      {adaptationReason}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Today's Mission */}
-            <div>
+            <div id="missions" className="scroll-mt-24">
               <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
                 <span className="h-2.5 w-2.5 rounded-full bg-violet-500 animate-ping" />
                 Today&apos;s Active Mission
@@ -242,6 +300,7 @@ function DashboardContent() {
                     currentLevel: 2,
                     targetLevel: 4,
                     description: MOCK_CURRENT_MISSION.description,
+                    difficulty: "intermediate",
                     type: "coding",
                     estimatedMinutes: 30,
                     taskPrompt: "Implement generic repository pattern with strict type guarantees.",
@@ -256,61 +315,102 @@ function DashboardContent() {
 
             {/* Last Evaluation */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
-              <h3 className="mb-4 text-lg font-semibold text-white">
-                Recent AI Mission Evaluation
-              </h3>
-
-              {/* Score bar */}
-              <div className="mb-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm text-zinc-400">Mastery Score</span>
-                  <span className="text-2xl font-bold text-white">
-                    {submissionResult ? submissionResult.score : MOCK_LAST_EVALUATION.score}
-                    <span className="text-sm text-zinc-500">/100</span>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">
+                  Recent AI Mission Evaluation
+                </h3>
+                {submissionResult ? (
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
+                      submissionResult.passed
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                        : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                    }`}
+                  >
+                    {submissionResult.passed ? "Passed ✓" : "Needs Reinforcement"}
                   </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-1000"
-                    style={{ width: `${submissionResult ? submissionResult.score : MOCK_LAST_EVALUATION.score}%` }}
-                  />
-                </div>
+                ) : (
+                  <span className="rounded-full bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] text-zinc-400">
+                    Awaiting Submission
+                  </span>
+                )}
               </div>
 
-              {/* Strengths & Weaknesses */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <h4 className="mb-2 text-sm font-medium text-emerald-400">
-                    ✓ Strengths Identified
-                  </h4>
-                  <ul className="space-y-1.5">
-                    {(submissionResult ? submissionResult.strengths : MOCK_LAST_EVALUATION.strengths).map((s, i) => (
-                      <li key={i} className="text-xs leading-relaxed text-zinc-400">
-                        {s}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="mb-2 text-sm font-medium text-rose-400">
-                    ✗ Areas for Improvement
-                  </h4>
-                  <ul className="space-y-1.5">
-                    {(submissionResult ? submissionResult.weaknesses : MOCK_LAST_EVALUATION.weaknesses).map((w, i) => (
-                      <li key={i} className="text-xs leading-relaxed text-zinc-400">
-                        {w}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
+              {submissionResult ? (
+                <>
+                  {/* Score bar */}
+                  <div className="mb-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-sm text-zinc-400">Mastery Score</span>
+                      <span className="text-2xl font-bold text-white">
+                        {submissionResult.score}
+                        <span className="text-sm text-zinc-500">/100</span>
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/5">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ${
+                          submissionResult.passed
+                            ? "bg-gradient-to-r from-emerald-500 to-teal-500"
+                            : "bg-gradient-to-r from-amber-500 to-orange-500"
+                        }`}
+                        style={{
+                          width: `${submissionResult.score}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
 
-              {/* Feedback */}
-              <div className="mt-4 rounded-xl bg-white/[0.03] p-4 border border-white/5">
-                <p className="text-sm leading-relaxed text-zinc-300 italic">
-                  &ldquo;{submissionResult ? submissionResult.feedback : MOCK_LAST_EVALUATION.feedback}&rdquo;
-                </p>
-              </div>
+                  {/* Strengths & Weaknesses */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <h4 className="mb-2 text-sm font-medium text-emerald-400">
+                        ✓ Strengths Identified
+                      </h4>
+                      <ul className="space-y-1.5">
+                        {submissionResult.strengths.map((s, i) => (
+                          <li key={i} className="text-xs leading-relaxed text-zinc-400">
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="mb-2 text-sm font-medium text-rose-400">
+                        ✗ Areas for Improvement
+                      </h4>
+                      <ul className="space-y-1.5">
+                        {submissionResult.weaknesses.length > 0 ? (
+                          submissionResult.weaknesses.map((w, i) => (
+                            <li key={i} className="text-xs leading-relaxed text-zinc-400">
+                              {w}
+                            </li>
+                          ))
+                        ) : (
+                          <li className="text-xs text-zinc-500 italic">No significant weaknesses identified!</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Feedback */}
+                  <div className="mt-4 rounded-xl bg-white/[0.03] p-4 border border-white/5">
+                    <p className="text-sm leading-relaxed text-zinc-300 italic">
+                      &ldquo;{submissionResult.feedback}&rdquo;
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 text-center">
+                  <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
+                    ⚡
+                  </div>
+                  <p className="text-sm font-medium text-white">No evaluations yet</p>
+                  <p className="mt-1 text-xs text-zinc-500 max-w-md mx-auto">
+                    Complete & submit today&apos;s active challenge above to receive personalized AI grading, strengths analysis, and rubric feedback.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -357,7 +457,7 @@ function DashboardContent() {
                 </div>
               </div>
               <p className="mt-4 text-sm text-zinc-400">
-                Week 1 in progress · 1 mission active today
+                Week {currentWeekNumber} in progress · {completedMissionsCount} completed
               </p>
             </div>
 
@@ -388,7 +488,7 @@ function DashboardContent() {
         </div>
 
         {/* ──── Roadmap Timeline ──── */}
-        <div className="mt-8">
+        <div id="roadmap" className="mt-8 scroll-mt-24">
           <RoadmapTimeline
             roadmap={roadmap}
             isLoading={isGeneratingRoadmap}
@@ -434,6 +534,14 @@ function DashboardContent() {
               {todayMission.expectedOutcome}
             </div>
 
+            {/* Error message */}
+            {submitError && (
+              <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+                <span className="font-bold block mb-0.5">⚠ Evaluation Error:</span>
+                {submitError}
+              </div>
+            )}
+
             {/* Submission Textarea */}
             <div className="mb-4">
               <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
@@ -441,10 +549,11 @@ function DashboardContent() {
               </label>
               <textarea
                 rows={7}
+                disabled={isSubmitting}
                 value={submissionText}
                 onChange={(e) => setSubmissionText(e.target.value)}
                 placeholder="Paste your solution, code implementation, or detailed written response here..."
-                className="w-full rounded-xl border border-white/10 bg-black/40 p-3 text-xs text-zinc-200 font-mono focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                className="w-full rounded-xl border border-white/10 bg-black/40 p-3 text-xs text-zinc-200 font-mono focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500 disabled:opacity-50"
               />
             </div>
 
@@ -452,8 +561,12 @@ function DashboardContent() {
             <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={() => setIsMissionModalOpen(false)}
-                className="rounded-xl px-4 py-2 text-xs font-medium text-zinc-400 hover:text-white"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setSubmitError(null);
+                  setIsMissionModalOpen(false);
+                }}
+                className="rounded-xl px-4 py-2 text-xs font-medium text-zinc-400 hover:text-white disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -461,22 +574,125 @@ function DashboardContent() {
                 type="button"
                 disabled={isSubmitting || submissionText.trim().length < 10}
                 onClick={async () => {
+                  if (!todayMission || submissionText.trim().length < 10) return;
+
                   setIsSubmitting(true);
-                  // Mock quick evaluation for instant feedback
-                  setTimeout(() => {
-                    setSubmissionResult({
-                      score: 88,
-                      feedback: "Excellent solution! You demonstrated strong comprehension of " + todayMission.targetSkill + " and adhered to the evaluation rubric.",
-                      strengths: ["Clean syntax and structure", "Addressed all edge cases outlined in prompt"],
-                      weaknesses: ["Could add additional automated tests for production readiness"],
+                  setSubmitError(null);
+                  setSubmittingStep("Step 1/2: Evaluating submission with AI...");
+
+                  try {
+                    // Step 1: Real AI Evaluation
+                    const evalRes = await fetch("/api/evaluate-mission", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        mission: todayMission,
+                        submissionText: submissionText,
+                        learnerProfile: profile,
+                        missionId: currentMissionId,
+                      }),
                     });
-                    setIsSubmitting(false);
+
+                    const evalData = await evalRes.json();
+
+                    if (!evalRes.ok || evalData.error) {
+                      throw new Error(evalData.error || "Failed to evaluate mission submission.");
+                    }
+
+                    // Update evaluation result state in dashboard
+                    setSubmissionResult(evalData);
+
+                    // If passed, increment completed count
+                    let newCompletedCount = completedMissionsCount;
+                    if (evalData.passed) {
+                      newCompletedCount += 1;
+                      setCompletedMissionsCount(newCompletedCount);
+                    }
+
+                    // Step 2: Generate Adaptive Next Mission
+                    setSubmittingStep(
+                      evalData.passed
+                        ? "Step 2/2: Passed! Synthesizing next roadmap milestone..."
+                        : "Step 2/2: Generating targeted remedial challenge..."
+                    );
+
+                    const nextRes = await fetch("/api/generate-next-mission", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        currentMission: todayMission,
+                        evaluation: evalData,
+                        learnerProfile: profile,
+                        skillGaps: skillGaps || [],
+                        roadmap: roadmap,
+                        roadmapId: roadmapId,
+                      }),
+                    });
+
+                    const nextData = await nextRes.json();
+
+                    if (!nextRes.ok || nextData.error) {
+                      throw new Error(nextData.error || "Failed to generate next adaptive mission.");
+                    }
+
+                    // Update state dynamically without page refresh
+                    if (nextData.updatedSkillGaps) {
+                      setSkillGaps(nextData.updatedSkillGaps);
+                    }
+                    if (nextData.nextMission) {
+                      setTodayMission(nextData.nextMission);
+                    }
+                    if (nextData.adaptationReason) {
+                      setAdaptationReason(nextData.adaptationReason);
+                    }
+                    if (typeof nextData.isRemedial === "boolean") {
+                      setIsRemedial(nextData.isRemedial);
+                    }
+                    if (nextData.supabase?.nextMissionId) {
+                      setCurrentMissionId(nextData.supabase.nextMissionId);
+                    }
+
+                    // Update cache in sessionStorage
+                    const cachedKey = `edupath_roadmap_${role.id}`;
+                    const cachedData = {
+                      roadmap,
+                      todayMission: nextData.nextMission || todayMission,
+                      skillGaps: nextData.updatedSkillGaps || skillGaps,
+                      lastEvaluation: evalData,
+                      completedMissionsCount: newCompletedCount,
+                      adaptationReason: nextData.adaptationReason,
+                      isRemedial: nextData.isRemedial,
+                      supabase: {
+                        roadmapId,
+                        missionId: nextData.supabase?.nextMissionId || currentMissionId,
+                        storedInSupabase: isSupabaseSaved,
+                      },
+                    };
+                    sessionStorage.setItem(cachedKey, JSON.stringify(cachedData));
+
+                    // Reset modal text and close modal
+                    setSubmissionText("");
                     setIsMissionModalOpen(false);
-                  }, 1200);
+                  } catch (err) {
+                    console.error("Mission submission error:", err);
+                    setSubmitError(
+                      err instanceof Error ? err.message : "Failed to process mission submission."
+                    );
+                  } finally {
+                    setIsSubmitting(false);
+                    setSubmittingStep(null);
+                  }
                 }}
-                className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:brightness-110 disabled:opacity-50"
+                className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:brightness-110 disabled:opacity-50 flex items-center gap-2"
               >
-                {isSubmitting ? "Submitting for AI Evaluation..." : "Submit Mission for AI Evaluation →"}
+                {isSubmitting && (
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                )}
+                <span>
+                  {isSubmitting
+                    ? submittingStep || "Evaluating Submission..."
+                    : "Submit Mission for AI Evaluation →"}
+                </span>
               </button>
             </div>
           </div>

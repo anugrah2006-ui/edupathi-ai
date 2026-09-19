@@ -31,14 +31,14 @@ export function Navbar() {
                 Overview
               </NavLink>
               <NavLink
-                href="/dashboard/missions"
-                active={pathname === "/dashboard/missions"}
+                href="/dashboard#missions"
+                active={false}
               >
                 Missions
               </NavLink>
               <NavLink
-                href="/dashboard/roadmap"
-                active={pathname === "/dashboard/roadmap"}
+                href="/dashboard#roadmap"
+                active={false}
               >
                 Roadmap
               </NavLink>
