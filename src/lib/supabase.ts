@@ -16,6 +16,27 @@ export function getSupabaseClient(): SupabaseClient | null {
   return createClient(supabaseUrl, supabaseKey);
 }
 
+let browserClientInstance: SupabaseClient | null = null;
+
+export function getSupabaseBrowserClient(): SupabaseClient {
+  if (browserClientInstance) {
+    return browserClientInstance;
+  }
+
+  const clientUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || supabaseUrl || "";
+  const clientKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || supabaseKey || "";
+
+  browserClientInstance = createClient(clientUrl, clientKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+
+  return browserClientInstance;
+}
+
 // ─── Roadmap & Mission Database Operations ───────────────────────
 
 export interface SaveRoadmapParams {

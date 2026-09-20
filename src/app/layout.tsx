@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/context/auth-context";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -32,14 +33,18 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
       className={`${inter.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#0a0a0f]">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );
